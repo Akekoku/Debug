@@ -9,13 +9,39 @@ st.set_page_config(page_title="API Debugger", page_icon="🛠️")
 st.title("🛠️ API Debugger: Groq & GitHub")
 st.markdown("ใช้ทดสอบยิง API ด้วยข้อความและรูปภาพ เพื่อดูโครงสร้างข้อมูล (Payload) และผลลัพธ์ดิบ (Raw Response)")
 
-# 1. ใส่กุญแจตรงนี้ได้เลย (เพื่อความง่ายในการทดสอบ)
+# 1. ใส่กุญแจตรงนี้ได้เลย
 st.subheader("🔑 1. API Keys")
 groq_key = st.text_input("GROQ_API_KEY", type="password", placeholder="gsk_...")
 github_key = st.text_input("GITHUB_TOKEN", type="password", placeholder="ghp_...")
 
+# [ใหม่] ฟังก์ชันดึงรายชื่อโมเดล Groq อัตโนมัติ (จำค่าไว้ 1 ชั่วโมง)
+@st.cache_data(ttl=3600)
+def get_groq_models(api_key):
+    if not api_key:
+        return ["qwen/qwen3.8-27b", "llama-3.3-70b-versatile"] 
+    
+    url = "https://api.groq.com/openai/v1/models"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            # เรียงชื่อจาก A-Z ให้หาหมวดหมู่ง่ายขึ้น
+            return sorted([model["id"] for model in data])
+    except:
+        pass
+    return ["qwen/qwen3.8-27b", "llama-3.3-70b-versatile"]
+
 # 2. ใส่ข้อมูลทดสอบ
 st.subheader("📝 2. ข้อมูลทดสอบ")
+
+# [ใหม่] เมนูดรอปดาวน์ให้เลือกโมเดล (จะโหลดลิสต์จริงเมื่อใส่คีย์)
+available_groq_models = get_groq_models(groq_key)
+# ตั้งค่า qwen/qwen3.8-27b เป็นตัวเลือกเริ่มต้นถ้าหาเจอในลิสต์
+default_index = available_groq_models.index("qwen/qwen3.8-27b") if "qwen/qwen3.8-27b" in available_groq_models else 0
+selected_groq_model = st.selectbox("🧠 เลือกรุ่นสมองของ Groq", available_groq_models, index=default_index)
+
 prompt_text = st.text_area("ข้อความ (Prompt)", value="อธิบายรูปภาพนี้ให้หน่อย")
 uploaded_file = st.file_uploader("อัปโหลดรูปภาพ (1 รูป)", type=["png", "jpg", "jpeg"])
 
@@ -32,7 +58,6 @@ def get_base64_image(file):
 st.subheader("🚀 3. ทดสอบยิง API")
 col1, col2 = st.columns(2)
 
-# ฟังก์ชันแสดงผลลัพธ์
 def display_results(payload, response):
     st.markdown("### 📤 ข้อมูลที่ส่งไป (Request Payload)")
     st.json(payload)
@@ -50,17 +75,16 @@ def display_results(payload, response):
 
 # --- ปุ่มทดสอบ Groq ---
 with col1:
-    if st.button("ทดสอบ Groq (Llama 3.2 Vision)", use_container_width=True):
+    if st.button("ทดสอบ Groq", use_container_width=True):
         if not groq_key:
             st.warning("กรุณาใส่ GROQ_API_KEY")
         else:
-            with st.spinner("กำลังยิง API ไปที่ Groq..."):
+            with st.spinner(f"กำลังยิง API ไปที่ {selected_groq_model}..."):
                 headers = {
                     "Authorization": f"Bearer {groq_key}",
                     "Content-Type": "application/json"
                 }
                 
-                # สร้าง Payload มาตรฐาน OpenAI
                 content_list = [{"type": "text", "text": prompt_text}]
                 if uploaded_file:
                     b64 = get_base64_image(uploaded_file)
@@ -70,7 +94,7 @@ with col1:
                     })
                 
                 payload = {
-                    "model": "llama-3.2-90b-vision-preview",
+                    "model": selected_groq_model,
                     "messages": [{"role": "user", "content": content_list}],
                     "max_tokens": 500
                 }
